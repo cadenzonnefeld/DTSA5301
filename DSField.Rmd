@@ -1,0 +1,134 @@
+---
+title: "NYPD Shooting Incident Data Report"
+author: "Caden Zonnefeld"
+date: "10/26/2022"
+output: pdf_document
+---
+
+## Data Collection
+
+```{r data import, message=FALSE}
+library(tidyverse)
+library(lubridate)
+
+url <- 'https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD'
+nypd <- read_csv(url, show_col_types = FALSE)
+
+```
+
+Collects data pertaining to NYPD shooting incidents from data.gov.
+The data is accessed by utilizing a URL and reading the data in via a .csv file.
+The raw data consists of nearly 26k observations and 19 features. The data
+acquisition is reproducible since it is collected from a pubplic URL.
+
+## Tidying the Data
+```{r tidy and transform data}
+
+nypd$OCCUR_DATE <- mdy(nypd$OCCUR_DATE)
+
+analysis_vars <- c('OCCUR_DATE', 'OCCUR_TIME', 'BORO', 'STATISTICAL_MURDER_FLAG',
+                   'VIC_AGE_GROUP', 'VIC_SEX', 'VIC_RACE')
+nypd <- nypd[analysis_vars]
+
+nypd
+
+```
+
+Inspecting the data and casting the OCCUR_DATE field to a date object to be
+properly treated as a date. Furthermore, reducing the dataset to the features
+I will use in an analysis that will focus on the victims of such incidents.
+The data is now tidy and ready for further analysis.
+
+## Data Visualization and Analysis
+
+```{r visualizing data, victim sex}
+boro_numbers <- count(nypd %>% group_by(BORO))
+
+boro_numbers$male <-count(nypd %>% group_by(BORO) %>% filter(VIC_SEX == 'M'))$n
+boro_numbers$female <-count(nypd %>% group_by(BORO) %>% filter(VIC_SEX == 'F'))$n
+
+boro_numbers %>% mutate(male_prop = male/n, female_prop = female/n)
+```
+
+The table indicates the the victim count and proportion of victims by gender
+for each of New York's boroughs. The data reveals that there are far more males
+that have been involved in incidents than females.
+
+```{r visualizing data, borough}
+ggplot(nypd) + geom_bar(aes(y=BORO, fill = BORO)) + 
+  ggtitle('Incidents by Borough') + xlab('Count') + ylab('New York Borough')
+```
+The first bar graph illustrates the number of incidents that occurred in each
+borough. We can gather that Staten Island has far fewer incidents while
+Brooklyn has the most recorded incidents. In fact, Brooklyn appears to have 
+about 10x as many incidents as Staten Island.
+
+```{r visualizing data, race}
+ggplot(nypd) + geom_bar(aes(y=VIC_RACE, fill = VIC_RACE)) +
+  ggtitle('Incidents by Victim Race') + xlab('Count') + ylab('Race')
+```
+The next bar graph breaks down the race of the victim in each incident. Note
+that black and to a lesser extent Hispanic individuals account for far more
+incidents than other races. It appears that black individuals are cited in
+incidents at disproportionate rates to their portion of the population.
+
+```{r visualizing data, age group}
+nypd_date <- nypd %>% filter(VIC_AGE_GROUP != 'UNKNOWN') %>% 
+  group_by(YEAR = year(OCCUR_DATE)) %>% count(VIC_AGE_GROUP)
+nypd_date
+
+minors <- nypd_date %>% filter(VIC_AGE_GROUP == '<18')
+
+
+minors %>% ggplot(aes(x=YEAR, y=n)) + geom_line() + ylab('Count') + xlab('Year') +
+  ggtitle('Number of Incidents Involving Minors by Year')
+
+```
+The grouped table shows the number of incidents that involved people from each
+age group band in the specified year. Lastly, the line graph shows the number of
+incidents involving minors on a yearly basis. Incidents involving minors have
+been greatly reduced since the beginning of data collection; however, there have
+been an uptick in such incidents over the last few years.
+
+
+```{r analyzing data, age group lm}
+age_model <- lm(n ~ VIC_AGE_GROUP, data = nypd_date)
+summary(age_model)
+```
+A simple linear model used to predict the number of shooting incidents in a
+given year by using only victim age group band indicates that age group 65+ has
+a significant effect that lowers the expected number of incidents. Conversely,
+age groups 18-24 and 25-44 have significant effects that increase the expected
+number of shooting incidents. Interestingly, victim age group alone accounts
+for 84% of the variation in the data.
+
+```{r analyzing data, }
+nypd_race <- nypd %>% filter(VIC_AGE_GROUP != 'UNKNOWN') %>% 
+  group_by(YEAR = year(OCCUR_DATE)) %>% count(VIC_RACE)
+
+race_model <- lm(n ~ VIC_RACE, data = nypd_race)
+summary(race_model)
+```
+Once again I used a simple linear regression to predict the number of shooting
+incidents in a given year using victim race as a predictor. We can see that a 
+race of Hispanic or black have a significant positive effect on the predicted
+number of incidents involved in for a given year. This model has good
+explanatory power since it accounts for 91% of the variation in the data.
+
+
+## Bias Recognition and Conclusion
+For full disclosure, I am a white male which may have implicitly biased my
+approach to considering the data, particularly the race and gender features. 
+
+The data indicates that non-white individuals, particularly those who are black,
+are at a far greater risk of being victimized by a shooting incident. The stark
+contrast makes me wonder what biases against black individuals put them at such
+an elevated risk to be involved in a shooting incident.
+Furthermore, we can see that men are more prone to being victimized as there is 
+about an 8:1 ratio for men to women victimized buy shootings. One encouraging
+trend from the data is the decrease of minors being involved in shootings;
+however, there is some cause for concern as the number of victimized minors has
+increased each year since 2019. Though we do not have the population of each 
+borough, we can see that by number of incidents alone Staten Island appears to
+be the safest as it has less than a third of the incidents of the next lowest 
+borough.
